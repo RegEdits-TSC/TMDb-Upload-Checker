@@ -3,41 +3,43 @@ import time
 import json
 import os
 
-from colorama import Fore, Style
+from rich.console import Console
+
+console = Console()
 
 def load_config(config_file='config.json'):
-    print(Fore.YELLOW + Style.BRIGHT + f"Loading configuration from '{config_file}'...")
+    console.print(f"[bold bright_yellow]Loading configuration from '{config_file}'...[/]")
     time.sleep(1)
     try:
         with open(config_file, 'r') as file:
             config = json.load(file)
-        print(Fore.GREEN + Style.BRIGHT + "Configuration successfully loaded.")
+        console.print("[bold bright_green]Configuration successfully loaded.[/]")
         return config
     except FileNotFoundError:
-        print(Fore.RED + Style.BRIGHT + f"ERROR: The configuration file '{config_file}' was not found.")
+        console.print(f"[underline bold bright_red]ERROR: The configuration file '{config_file}' was not found.[/]")
         exit(1)
     except json.JSONDecodeError as e:
-        print(Fore.RED + Style.BRIGHT + f"ERROR: Failed to parse the configuration file '{config_file}'. JSON error: {str(e)}")
+        console.print(f"[underline bold bright_red]ERROR: Failed to parse the configuration file '{config_file}'. JSON error: {str(e)}[/]")
         exit(1)
     except Exception as e:
-        print(Fore.RED + Style.BRIGHT + f"ERROR: An unexpected error occurred while loading the configuration: {str(e)}")
+        console.print(f"[underline bold bright_red]ERROR: An unexpected error occurred while loading the configuration: {str(e)}[/]")
         exit(1)
 
 def validate_config(config):
-    print(Fore.YELLOW + Style.BRIGHT + "Validating configuration...")
+    console.print("[bold bright_yellow]Validating configuration...[/]")
     required_keys = ['api_keys', 'sites']
     for key in required_keys:
         if key not in config:
-            print(Fore.RED + Style.BRIGHT + f"ERROR: The key '{key}' is missing in the configuration file.")
+            console.print(f"[underline bold bright_red]ERROR: The key '{key}' is missing in the configuration file.[/]")
             exit(1)
 
     for site_name in config['sites']:
         if site_name not in config['api_keys']:
-            print(Fore.RED + Style.BRIGHT + f"ERROR: API key for '{site_name}' is missing in the 'api_keys' section of the configuration.")
+            console.print(f"[underline bold bright_red]ERROR: API key for '{site_name}' is missing in the 'api_keys' section of the configuration.[/]")
             exit(1)
 
     time.sleep(1)
-    print(Fore.GREEN + Style.BRIGHT + "Configuration successfully validated.")
+    console.print("[bold bright_green]Configuration successfully validated.")
 
 def test_api_key(api_url, headers):
     try:
@@ -47,7 +49,7 @@ def test_api_key(api_url, headers):
         else:
             return False  # The API key is invalid or there's another issue
     except requests.exceptions.RequestException as e:
-        print(f"ERROR: Failed to test API key -> {e}")
+        console.print(f"[underline bold bright_red]ERROR: Failed to test API key -> {e}[/]")
         return False
 
 def setup_api_keys_and_sites(config):
@@ -74,5 +76,5 @@ def send_request(site_name, site_info, params):
         response = requests.get(site_info['url'], headers=site_info['headers'], params=params)
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(Fore.RED + Style.BRIGHT + f"Error fetching data from {site_name}: {str(e)}")
+        console.print(f"[underline bold bright_red]Error fetching data from {site_name}: {str(e)}[/]")
         return {"error": str(e)}

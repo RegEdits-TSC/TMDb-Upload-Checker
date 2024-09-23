@@ -4,13 +4,12 @@ import random
 
 from api_manager import validate_config, load_config, setup_api_keys_and_sites, test_api_key
 from file_manager import load_tmdb_ids, save_tmdb_ids, get_tmdb_filepath_and_entries
-from user_interaction import get_iterations, get_search_type, get_tmdb_mode, get_tmdb_file, removed_parsed_entries
-from utils import get_latest_tmdb_url, fetch_site_data, extract_tmdb_ids_titles, output_site_results
-from tqdm import tqdm
-from colorama import Fore, Style, init
+from user_interaction import get_iterations, get_search_type, get_tmdb_mode, get_tmdb_file, removed_parsed_entries, search_for_string, get_search_strings
+from utils import get_latest_tmdb_url, extract_tmdb_ids_titles
+from progress_bar import progress_bar
+from rich.console import Console
 
-# Initialize colorama (required for Windows)
-init(autoreset=True)
+console = Console()
 
 # Load the configuration
 config = load_config()
@@ -27,118 +26,106 @@ failed_sites = []
 # Test API keys from config.json
 for site_name, site_info in sites.items():
     if test_api_key(site_info['url'], site_info['headers']):
-        print(Fore.GREEN + Style.BRIGHT + f"The API key for {site_name} is valid.")    
+        console.print(f"[bold bright_green]The API key for {site_name} is valid ✅[/]")    
     else:
-        print(Fore.RED + Style.BRIGHT + f"WARNING: The API key for {site_name} is invalid or there was an error.")
+        console.print(f"[underline bold bright_yellow]WARNING: The API key for {site_name} is invalid or there was an error.[/]")
         failed_sites.append(site_name)
 
-# Determine the search type (Movies or Shows)
-search_type = get_search_type()
+# Check if all sites failed
+if len(failed_sites) == len(sites):
+    console.print("[underline bold bright_red]ERROR: All API keys failed. The script cannot proceed. Exiting script...[/]")
+    exit(1)
 
-# Load the appropriate TMDb IDs file based on the user's choice
-filepath, tmdb_entries = get_tmdb_filepath_and_entries(search_type)
+# Loop until user wants to stop searching
+while True:
+    # Determine the search type (Movies or Shows)
+    search_type = get_search_type()
 
-# Get the latest URL for downloading TMDb IDs
-download_url = get_latest_tmdb_url(search_type)
+    # Load the appropriate TMDb IDs file based on the user's choice
+    filepath, tmdb_entries = get_tmdb_filepath_and_entries(search_type)
 
-# Check if the file is empty or contains no valid TMDb IDs
-if not tmdb_entries:
-    tmdb_entries = get_tmdb_file(search_type, download_url, filepath, load_tmdb_ids)
+    # Get the latest URL for downloading TMDb IDs
+    download_url = get_latest_tmdb_url(search_type)
 
-# Ask the user if they want to specify a TMDb ID or read from the .json file
-mode = get_tmdb_mode()
+    # Check if the file is empty or contains no valid TMDb IDs
+    if not tmdb_entries:
+        tmdb_entries = get_tmdb_file(search_type, download_url, filepath, load_tmdb_ids)
 
-if mode == 'json':
-    # Shuffle the entries to randomize the order
-    random.shuffle(tmdb_entries)
+    # Ask the user if they want to specify a TMDb ID or read from the .json file
+    mode = get_tmdb_mode()
 
-    # Extract IDs and titles for processing
-    tmdb_ids_titles = extract_tmdb_ids_titles(tmdb_entries, search_type)
+    if mode == 'json':
+        # Shuffle the entries to randomize the order
+        random.shuffle(tmdb_entries)
 
-    # List to track which IDs were successfully processed
-    processed_tmdb_ids = []
+        # Extract IDs and titles for processing
+        tmdb_ids_titles = extract_tmdb_ids_titles(tmdb_entries, search_type)
 
-    # Get the number of iterations the user wants to perform
-    iterations = get_iterations(len(tmdb_ids_titles))
+        # List to track which IDs were successfully processed
+        processed_tmdb_ids = []
 
-    # Create progress bar
-    progress_bar = tqdm(range(iterations), desc=Fore.YELLOW + Style.BRIGHT + "Checking TMDb IDs" + Style.RESET_ALL, 
-            bar_format="{l_bar}%s{bar}%s [Elapsed: {elapsed} | Remaining: {remaining}]" % (Fore.CYAN, Fore.RESET))
+        # Get the number of iterations the user wants to perform
+        iterations = get_iterations(len(tmdb_ids_titles))
 
-    # Perform the checks
-    for i in progress_bar:
+        progress_bar(iterations, tmdb_ids_titles, sites, search_type, failed_sites, processed_tmdb_ids, mode)
 
-        tmdb_id, title = tmdb_ids_titles[i]
-        params = {'tmdbId': tmdb_id}
-
-        progress_bar.write(Fore.YELLOW + Style.BRIGHT + f"Searching for TMDb ID: {tmdb_id} (Title: {title})")
-        
-        site_results = fetch_site_data(progress_bar, sites, params, search_type, failed_sites)
-
-        # Output results in organized format
-        output_site_results(progress_bar, site_results)
-
-        # Add the processed TMDb ID to the list
-        processed_tmdb_ids.append(tmdb_id)
-
-elif mode == 'id':
-    while True:
+    elif mode == 'id':
         # Ask for the specific TMDb ID(s)
-        tmdb_ids_input = input(Fore.YELLOW + Style.BRIGHT + "Enter the TMDb ID(s) you'd like to search for (comma-separated if multiple): ").strip()
+        console.print("[bold bright_yellow]Enter the TMDb ID(s) you'd like to search for (comma-separated if multiple):[/]", end=" ")
+        while True:
+            tmdb_ids_input = input().strip()
 
-        # Split the input into a list of TMDb IDs, strip whitespace, and remove duplicates by converting to a set
-        tmdb_ids = {tmdb_id.strip() for tmdb_id in tmdb_ids_input.split(',')}
+            # Split the input into a list of TMDb IDs, strip whitespace, and remove duplicates by converting to a set
+            tmdb_ids = {tmdb_id.strip() for tmdb_id in tmdb_ids_input.split(',')}
 
-        # Convert the set back to a list of integers for comparison
-        try:
-            tmdb_ids = [int(tmdb_id) for tmdb_id in tmdb_ids]
-            break  # If conversion succeeds, break out of the loop
-        except ValueError:
-            print(Fore.RED + Style.BRIGHT + "ERROR: All TMDb IDs must be numeric values. Please also ensure there are no leading or trailing commas.")
+            # Convert the set back to a list of integers for comparison
+            try:
+                tmdb_ids = [int(tmdb_id) for tmdb_id in tmdb_ids]
+                break  # If conversion succeeds, break out of the loop
+            except ValueError:
+                console.print("[underline bold bright_red]ERROR: All TMDb IDs must be numeric values. Please also ensure there are no leading or trailing commas.[/]", end=" ")
 
-    # Extract IDs and titles for processing
-    tmdb_ids_titles = extract_tmdb_ids_titles(tmdb_entries, search_type)
+        # Extract IDs and titles for processing
+        tmdb_ids_titles = extract_tmdb_ids_titles(tmdb_entries, search_type)
 
-    # List to track which IDs were successfully processed
-    processed_tmdb_ids = []
+        # List to track which IDs were successfully processed
+        processed_tmdb_ids = []
 
-    # Get the number of iterations based on how many TMDb IDs user inputs
-    iterations = len(tmdb_ids)
+        # Get the number of iterations based on how many TMDb IDs user inputs
+        iterations = len(tmdb_ids)
 
-    # Create progress bar
-    progress_bar = tqdm(range(len(tmdb_ids)), desc=Fore.YELLOW + Style.BRIGHT + "Checking TMDb IDs" + Style.RESET_ALL, 
-                        bar_format="{l_bar}%s{bar}%s [Elapsed: {elapsed} | Remaining: {remaining}]" % (Fore.CYAN, Fore.RESET))
+        # Does the user want to search for a specific string
+        search = search_for_string()
 
-    # Perform the checks
-    for i in progress_bar:
-
-        tmdb_id = tmdb_ids[i]
-        found_entry = next((entry for entry in tmdb_ids_titles if entry[0] == tmdb_id), None)
-
-        if found_entry:
-            tmdb_id, title = found_entry
-            progress_bar.write(Fore.GREEN + Style.BRIGHT + f"Found TMDb ID: {tmdb_id} (Title: {title})")
-            params = {'tmdbId': tmdb_id}
-
-            site_results = fetch_site_data(progress_bar, sites, params, search_type, failed_sites)
-
-            # Output results in organized format
-            output_site_results(progress_bar, site_results)
-
-            # Add the processed TMDb ID to the list
-            processed_tmdb_ids.append(tmdb_id)
+        # If the user wants to search for a specific string, get the string
+        if search:
+            search_string = get_search_strings()
+            progress_bar(iterations, tmdb_ids_titles, sites, search_type, failed_sites, processed_tmdb_ids, mode, tmdb_ids, search, search_string)
         else:
-            progress_bar.write(Fore.RED + Style.BRIGHT + f"ERROR: TMDb ID {tmdb_id} not found in the {search_type.capitalize()} TMDb IDs file.")
+            progress_bar(iterations, tmdb_ids_titles, sites, search_type, failed_sites, processed_tmdb_ids, mode, tmdb_ids)
 
+    # After processing all TMDb IDs, ask whether to remove them from the .json file
+    if processed_tmdb_ids and mode =='json':
+        remove_items = removed_parsed_entries()
 
-# After processing all TMDb IDs, ask whether to remove them from the .json file
-if processed_tmdb_ids:
-    remove_items = removed_parsed_entries()
+        if remove_items:
+            # Remove processed entries from the list and save the remaining entries back to the file
+            console.print("[bold bright_yellow]Removing TMDb ID(s) that have already been searched from the `.json` file to maintain a list of unsearched IDs.[/]")
+            tmdb_entries = [entry for entry in tmdb_entries if entry['id'] not in processed_tmdb_ids]  # Remove processed entries
+            save_tmdb_ids(filepath, tmdb_entries)
+        else:
+            console.print("[bold bright_green]TMDb ID entry/entries will remain in the `.json` file and will not be removed.[/]")
+    
+    console.print("[bold bright_yellow]Would you like to continue searching? (Y/N):[/]", end=" ")
 
-    if remove_items:
-        # Remove processed entries from the list and save the remaining entries back to the file
-        print(Fore.YELLOW + Style.BRIGHT + "Removing TMDb ID(s) that have already been searched from the `.json` file to maintain a list of unsearched IDs.")
-        tmdb_entries = [entry for entry in tmdb_entries if entry['id'] not in processed_tmdb_ids]  # Remove processed entries
-        save_tmdb_ids(filepath, tmdb_entries)
-    else:
-        print(Fore.GREEN + Style.BRIGHT + "TMDb ID entry/entries will remain in the `.json` file and will not be removed.")
+    # Prompt the user whether to continue or stop
+    while True:
+        continue_search = input().lower().strip()
+
+        if continue_search == 'y':
+            break  # Continue with the loop
+        elif continue_search == 'n':
+            console.print("[bold bright_green]Search process terminated by user.[/]")
+            exit()  # Stop the loop and exit
+        else:
+            console.print("[bold bright_red]Invalid input. Please type 'Y' or 'N'.[/]", end=" ")
